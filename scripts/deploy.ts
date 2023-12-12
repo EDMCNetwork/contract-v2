@@ -5,15 +5,12 @@ async function main() {
 
   const initialSupply = ethers.parseUnits("500_000_000", 8);
 
-  const edmc = await EDMC.deploy(
-      "EDMC Network", // Token Name
-      "EDMC",       // Token Symbol
-      initialSupply // Initial Supply
-  );
+  const edmc = await EDMC.deploy();
 
-  await edmc.deployed();
+  await edmc.waitForDeployment();
+  await edmc.initialize("EDMC Token", "EDMC", initialSupply);
 
-  console.log("EDMC deployed to:", edmc.address);
+  console.log("EDMC deployed to:", edmc.target);
 }
 
 main().catch((error) => {

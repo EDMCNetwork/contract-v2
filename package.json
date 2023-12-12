@@ -24,9 +24,14 @@
     "ethers": "^6.4.0",
     "hardhat": "^2.19.2",
     "hardhat-gas-reporter": "^1.0.8",
+    "mochawesome": "^7.1.3",
     "solidity-coverage": "^0.8.0",
     "ts-node": ">=8.0.0",
     "typechain": "^8.3.0",
     "typescript": ">=4.5.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts-upgradeable": "^5.0.1",
+    "dotenv": "^16.3.1"
   }
 }

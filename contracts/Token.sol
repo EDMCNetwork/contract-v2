@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
 
 /**
  * @notice EDMC is an ERC20 token with extended functionalities:
@@ -23,26 +24,27 @@ import "@openzeppelin/contracts/security/Pausable.sol";
  * For security and functionality, the contract restricts certain actions to the owner and enforces checks like maximum supply, transfer blacklist.
  * The fee mechanism and whitelist/blacklist can be managed by the owner, providing flexibility in the contract's behavior.
  */
-contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, Pausable {
-    /// @dev Maximum supply of tokens that can ever exist for this token.
-    uint256 private _maxSupply = 500_000_000 * 10**8;
+contract EDMC is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, OwnableUpgradeable, UUPSUpgradeable, PausableUpgradeable {
 
     /// @dev Maximum permissible fee percentage that can be set for transactions.
-    uint256 private _maxFee = 4; // Maximum is 10%
+    uint256 private _maxFee = 4;
 
     /// @dev Mapping to keep track of addresses that are exempt from transaction fees.
-    mapping(address => bool) private _feeWhitelist;
+    mapping(address => bool) public feeWhitelist;
 
     /// @dev Mapping to keep track of addresses that are blacklisted from performing transfers.
-    mapping(address => bool) private _transferBlacklist;
+    mapping(address => bool) public transferBlacklist;
 
     /// @notice The percentage of each transaction taken as a fee.
     /// @dev Fee percentage for transactions, charged if the address is not in the fee whitelist.
-    uint256 public feePercentage = 0;
+    uint256 public feePercentage = 3;
 
     /// @notice The collector address where transaction fees are sent.
     /// @dev Address where the transaction fees are accumulated.
     address public feeCollector;
+
+    /// @dev Maximum supply of tokens that can ever exist for this token.
+    uint256 public maxSupply = 500_000_000 * 10**8;
 
     /// @dev Emitted when the fee percentage is changed.
     /// @param newFeePercentage The new transaction fee percentage.
@@ -85,8 +87,11 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// @param initialSupply The amount of tokens to mint upon initialization.
     function initialize(string memory name, string memory symbol, uint256 initialSupply) public initializer {
         __ERC20_init(name, symbol);  // Initialize the ERC20 base contract.
-        __Ownable_init();            // Initialize the Ownable module.
+        __Ownable_init(msg.sender);            // Initialize the Ownable module.
         __UUPSUpgradeable_init();    // Initialize the UUPS upgradeable module.
+        __Pausable_init();           // Initialize the Pausable module.
+        __ERC20Burnable_init();      // Initialize the ERC20 burnable module.
+
         _mint(msg.sender, initialSupply);  // Mint the initial supply to the message sender.
         feeCollector = msg.sender;         // Set the fee collector to the message sender.
     }
@@ -118,7 +123,7 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// @dev Only callable by the contract owner.
     /// @param _address The address to be added to the whitelist.
     function addToWhitelist(address _address) public onlyOwner {
-        _feeWhitelist[_address] = true;
+        feeWhitelist[_address] = true;
         emit WhitelistedAddressAdded(_address);
     }
 
@@ -126,7 +131,7 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// @dev Only callable by the contract owner.
     /// @param _address The address to be removed from the whitelist.
     function removeFromWhitelist(address _address) public onlyOwner {
-        _feeWhitelist[_address] = false;
+        feeWhitelist[_address] = false;
         emit WhitelistedAddressRemoved(_address);
     }
 
@@ -134,7 +139,7 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// @dev Only callable by the contract owner.
     /// @param _address The address to be added to the blacklist.
     function addToBlacklist(address _address) public onlyOwner {
-        _transferBlacklist[_address] = true;
+        transferBlacklist[_address] = true;
         emit BlacklistedAddressAdded(_address);
     }
 
@@ -142,7 +147,7 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// @dev Only callable by the contract owner.
     /// @param _address The address to be removed from the blacklist.
     function removeFromBlacklist(address _address) public onlyOwner {
-        _transferBlacklist[_address] = false;
+        transferBlacklist[_address] = false;
         emit BlacklistedAddressRemoved(_address);
     }
 
@@ -163,41 +168,42 @@ contract EDMC is Initializable, ERC20, ERC20Burnable, Ownable, UUPSUpgradeable, 
     /// It includes an additional check to ensure that the minting does not exceed the maximum supply.
     /// @param account The address that will receive the minted tokens.
     /// @param amount The amount of tokens to mint.
-    function _mint(address account, uint256 amount) internal override {
-        require(totalSupply() + amount <= _maxSupply, "Max supply exceeded");
-        super._mint(account, amount);
+    function mint(address account, uint256 amount) external onlyOwner {
+        require(totalSupply() + amount <= maxSupply, "Max supply exceeded");
+        _mint(account, amount);
     }
 
-    /// @dev Transfers tokens between two addresses, applying fees and blacklist/whitelist logic.
-    /// This internal function is an override of the base ERC20 `_transfer` function.
-    /// It includes checks for blacklist and whitelist conditions, and applies a fee if applicable.
-    /// @param sender The address to transfer tokens from.
-    /// @param recipient The address to transfer tokens to.
-    /// @param amount The amount of tokens to transfer.
-    function _transfer(address sender, address recipient, uint256 amount) internal override {
-        require(!_transferBlacklist[sender] && !_transferBlacklist[recipient], "Address is blacklisted");
+    function _update(address from, address to, uint256 value) internal override whenNotPaused {
+        if (from == address(0)) { // Minting tokens
+            require(totalSupply() + value <= maxSupply, "Max supply exceeded");
+        }
 
         uint256 feeAmount = 0;
-        if (!_feeWhitelist[sender] && !_feeWhitelist[recipient]) {
-            feeAmount = (amount * feePercentage) / 100;
-            amount -= feeAmount;
+
+        // Check for fees if it's a normal transfer (neither minting nor burning)
+        if (from != address(0) && to != address(0)) {
+            require(!transferBlacklist[from], "Sender address is blacklisted");
+            require(!transferBlacklist[to], "Recipient address is blacklisted");
+
+            // Calculate fees if neither party is whitelisted
+            if (!feeWhitelist[from] && !feeWhitelist[to]) {
+                feeAmount = (value * feePercentage) / 100;
+
+                // Ensure there is enough balance to cover the fee
+                require(value >= feeAmount, "Insufficient balance to cover fees");
+
+                value -= feeAmount; // Reduce the transfer value by the fee amount
+            }
         }
 
-        super._transfer(sender, recipient, amount);
+        // Call the original _update function for the main transfer
+        super._update(from, to, value);
 
+        // Handle fee transfer separately if applicable
         if (feeAmount > 0) {
-            super._transfer(sender, feeCollector, feeAmount);
+            // Transfer the fee from the sender to the fee collector
+            super._update(from, feeCollector, feeAmount);
         }
-    }
-
-    /// @dev Hook that is called before any transfer of tokens.
-    /// This includes minting and burning, as well as regular transfers.
-    /// Overridden to include a pause functionality using the `Pausable` modifier.
-    /// @param from The address tokens are transferred from.
-    /// @param to The address tokens are transferred to.
-    /// @param amount The amount of tokens being transferred.
-    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override whenNotPaused {
-        super._beforeTokenTransfer(from, to, amount);
     }
 
     /// @dev Authorizes an upgrade to a new implementation contract.
