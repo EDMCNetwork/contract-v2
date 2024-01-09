@@ -1,4 +1,4 @@
-# EDMC Token Contract
+# EDMCNetwork Token Contract
 
 ## Overview
 The EDMC token is an ERC20-compliant token with extended functionalities. This contract is implemented using Solidity and is designed for EVM-based blockchains. The token includes various features such as pausing/unpausing transfers, token burning, a fee mechanism, and upgradeability using UUPS.
